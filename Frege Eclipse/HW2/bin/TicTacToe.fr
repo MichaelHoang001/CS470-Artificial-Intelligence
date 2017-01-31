@@ -1,0 +1,85 @@
+module TicTacToe where
+
+import Data.List
+
+data State = State {pl1 :: [Int], pl2 :: [Int], pl1Turn :: Bool}
+
+main :: IO ()
+main = playTurn startState
+       where playTurn state 
+                 | isWinner $ state.pl1 = putStr $ printBoard state ++ "You win!\n"
+                 | isWinner $ state.pl2 = putStr $ printBoard state ++ "I win!\n"
+                 | genMoves state == [] = putStr $ printBoard state ++ "It's a tie!\n"
+                 | state.pl1Turn        = humanMove state >>= playTurn
+                 | otherwise            = computerMove state >>= playTurn
+
+startState = State {pl1 = [], pl2 = [], pl1Turn = True} 
+
+humanMove :: State -> IO State
+humanMove state = do putStr $ printBoard state ++ "Your move [0 to 8]: "
+                     stdout.flush
+                     moveStr <- getLine
+                     let move = atoi moveStr
+                     if move `elem` (genMoves state) 
+                         then return $ playTurn state move
+                         else humanMove state
+
+computerMove :: State -> IO State
+computerMove state = do let move = findBestMove state 3
+                        putStr $ printBoard state ++ "My move: " ++ show move ++ "\n"
+                        stdout.flush
+                        return $ playTurn state move
+
+playTurn :: State -> Int -> State          
+playTurn state move
+    | state.pl1Turn = State {pl1 = move:state.pl1, pl2 = state.pl2, pl1Turn = False}
+    | otherwise     = State {pl1 = state.pl1, pl2 = move:state.pl2, pl1Turn = True}
+
+printBoard :: State -> String
+printBoard state = 
+    hLine ++ "| " ++ prnt 0 ++ " | " ++ prnt 1 ++ " | " ++ prnt 2 ++ " |" ++
+    hLine ++ "| " ++ prnt 3 ++ " | " ++ prnt 4 ++ " | " ++ prnt 5 ++ " |" ++
+    hLine ++ "| " ++ prnt 6 ++ " | " ++ prnt 7 ++ " | " ++ prnt 8 ++ " |" ++ hLine
+    where hLine = "\n+---+---+---+\n"
+          prnt position
+              | position `elem` state.pl1 = "X"
+              | position `elem` state.pl2 = "O"
+              | otherwise                 = " "
+
+findBestMove :: State -> Int -> Int
+--findBestMove state lookAhead = head $ genMoves state
+findBestMove state lookAhead = head $ genMoves state
+
+aStar' :: Eq a => a -> a -> (a->a->Int) -> (a->[a]) -> Int -> [a]
+aStar' start goal h' genStates maxDepth = expand [(h' start goal, [start])]
+    where expand [] = []
+          expand ((score, path):nodes)
+            | head path == goal = reverse path
+            | length path > maxDepth = expand nodes
+            | otherwise = expand $ sortBy (compare `on` fst) (nodes ++ newNodes)
+            where newNodes = [(length path + h' state goal, state:path) |
+                              state <- genStates $ head path, state `notElem` path]
+
+
+
+isWinner :: [Int] -> Bool
+isWinner pieces = any isComplete winLines
+                  where isComplete winLine = all (`elem` pieces) winLine 
+
+winLines = [[0,1,2],[3,4,5],[6,7,8],[0,3,6],[1,4,7],[2,5,8],[0,4,8],[2,4,6]]
+           
+genMoves :: State -> [Int]         
+genMoves state = filter (`notElem` (state.pl1 ++ state.pl2)) [0..8] 
+
+score :: State -> Int
+score state = openLines state.pl2 - openLines state.pl1
+    where openLines pieces = length $ filter (isOpen pieces) winLines
+          isOpen pieces winLine = all (`notElem` pieces) winLine
+
+-- this helper function required to ensure algorithm treats winning states with utmost respect
+revisedscore :: State -> Int
+revisedscore state = parse state
+                     where parse state
+                            | isWinner $ state.pl1 = -100
+                            | isWinner $ state.pl2 = 100
+                            | otherwise            = score state
